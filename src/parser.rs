@@ -1,47 +1,6 @@
-use crate::lexer::{Lexer, TextPos, Token, TokenKind};
+use core::panic;
 
-#[derive(Clone, Debug)]
-pub struct NodePT {
-    pub start: TextPos,
-    pub end: TextPos,
-}
-
-impl NodePT {
-    pub fn new(start: TextPos, end: TextPos) -> Self {
-        Self { start, end }
-    }
-
-    pub fn from_token(token: &Token) -> Self {
-        Self::new(token.start, token.end)
-    }
-}
-
-#[derive(Debug)]
-pub struct TypePT<'a> {
-    pub identifier: IdentifierPT<'a>,
-    pub node: NodePT,
-}
-
-#[derive(Debug)]
-pub struct ParamPT<'a> {
-    pub ty: TypePT<'a>,
-    pub identifier: IdentifierPT<'a>,
-    pub node: NodePT,
-}
-
-#[derive(Debug)]
-pub struct FuncPT<'a> {
-    pub identifier: IdentifierPT<'a>,
-    pub return_type: TypePT<'a>,
-    pub params: Vec<ParamPT<'a>>,
-    pub node: NodePT,
-}
-
-#[derive(Debug)]
-pub struct IdentifierPT<'a> {
-    pub name: &'a str,
-    pub node: NodePT,
-}
+use crate::{lexer::{Lexer, TokenKind}, parse_tree::*};
 
 
 pub fn parse(input: &str) -> FuncPT {
@@ -81,6 +40,63 @@ fn parse_identifier_unwrap<'a>(lexer: &mut Lexer<'a>) -> IdentifierPT<'a> {
     }
 }
 
+fn parse_primary(lexer: &mut Lexer) -> Box<dyn ExprPT> {
+    if lexer.current.kind == TokenKind::Int {
+        let number = IntLiteralPT {
+            value: lexer.current.content.replace("_", "").parse().unwrap(),
+            node: NodePT::from_token(&lexer.current)
+        };
+        lexer.consume();
+        Box::new(number)
+    } else {
+        panic!("Expected number at {}", lexer.current.start);
+    }
+}
+
+fn parse_postfix(lexer: &mut Lexer) -> Box<dyn ExprPT> {
+    parse_primary(lexer)
+}
+
+fn parse_unary(lexer: &mut Lexer) -> Box<dyn ExprPT> {
+    parse_postfix(lexer)
+}
+
+
+fn parse_item(lexer: &mut Lexer, precedence: u32) -> ItemPT {
+    
+    let mut expr = parse_unary(lexer);
+    let start = expr.node().start;
+    loop {
+        let op = BinOp::from_token(&lexer.current);
+        lexer.consume();
+        if let Some(op) = op {
+            let op_precedence = op.precedence();
+            if op_precedence < precedence {
+                break;
+            }
+
+            let rhs = parse_expr(lexer, op_precedence + op.left_associative() as u32);
+            let end = rhs.node().end;
+            expr = Box::new(BinOpPT {
+                op,
+                lhs: expr,
+                rhs,
+                node: NodePT::new(start, end)
+            });
+        } else {
+            break;
+        }
+    }
+    ItemPT::Expr(expr)
+}
+
+fn parse_expr(lexer: &mut Lexer, precedence: u32) -> Box<dyn ExprPT> {
+    match parse_item(lexer, precedence) {
+        ItemPT::Expr(expr) => expr,
+        ItemPT::Statement(statement) => panic!("Expected expression at {}", statement.node().start),
+    }
+}
+
 fn parse_func<'a>(lexer: &mut Lexer<'a>) -> FuncPT<'a> {
     let return_type = parse_type_unwrap(lexer);
     let identifier = parse_identifier_unwrap(lexer);
@@ -93,14 +109,23 @@ fn parse_func<'a>(lexer: &mut Lexer<'a>) -> FuncPT<'a> {
     while lexer.current.kind != TokenKind::RParen {
         let param_type = parse_type_unwrap(lexer);
         let identifier = parse_identifier_unwrap(lexer);
-        if lexer.consume_if(TokenKind::Comma) {
-            params.push(ParamPT { node: NodePT::new(param_type.node.start, identifier.node.end), ty: param_type, identifier });
-        } else if lexer.current.kind != TokenKind::RParen {
+        if lexer.current.kind != TokenKind::RParen {
             panic!("Expected ',' or ')' at {}", lexer.current.start)
         }
+        params.push(ParamPT { node: NodePT::new(param_type.node.start, identifier.node.end), ty: param_type, identifier });
     }
 
-    let func = FuncPT { node: NodePT::new(return_type.node.start, lexer.current.end), return_type, identifier, params };
+    let proto_end = lexer.current.end;
     lexer.consume();
-    func
+    let body = parse_expr(lexer, 1);
+    FuncPT {
+        node: NodePT::new(return_type.node.start, body.node().end),
+        proto: ProtoPT {
+            node: NodePT::new(return_type.node.start, proto_end),
+            identifier,
+            return_type,
+            params,
+        },
+        body,
+    }
 }

@@ -29,6 +29,15 @@ pub enum TokenKind {
     RParen,
     LCuly,
     RCurly,
+
+    And,
+    Or,
+    Eq,
+    Add,
+    Sub,
+    Mul,
+    Div,
+
     Comma,
     SemiColon,
 

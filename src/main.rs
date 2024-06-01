@@ -1,8 +1,8 @@
 mod lexer;
 mod parser;
+mod parse_tree;
 
 fn main() {
-    println!("Hello, world!");
-    let func = parser::parse("i32 test(i32 arg1)");
+    let func = parser::parse("i32 test(i32 arg1) 5");
     println!("{:#?}", func);
 }

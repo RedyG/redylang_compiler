@@ -4,9 +4,9 @@ mod parse_tree;
 
 fn main() {
     let func = parser::parse("
-    i32 test(i32 arg1) {
-        <- 2;
-    }");
+fn test() -> void {
+    var a: i32 = 2;
+}");
     println!("{:#?}", func);
 
     

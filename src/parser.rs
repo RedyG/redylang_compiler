@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::{lexer::{Lexer, Token, TokenKind}, parse_tree::*};
+use crate::{lexer::{Lexer, TokenKind}, parse_tree::*};
 
 
 pub fn parse(input: &str) -> FuncPT {
@@ -116,8 +116,14 @@ fn parse_item<'a>(lexer: &mut Lexer<'a>, precedence: u32) -> ItemPT<'a> {
     if lexer.current.kind == TokenKind::Var {
         let start = lexer.current.start;
         lexer.consume();
-        let ty = parse_type_unwrap(lexer);
         let identifier = parse_identifier_unwrap(lexer);
+
+        if lexer.current.kind != TokenKind::Colon {
+            panic!("Expected ':' at {}", lexer.current.start);
+        }
+        lexer.consume();
+
+        let ty = parse_type_unwrap(lexer);
         if lexer.current.kind != TokenKind::Eq {
             panic!("Expected '=' at {}", lexer.current.start);
         }
@@ -169,7 +175,8 @@ fn parse_expr<'a>(lexer: &mut Lexer<'a>, precedence: u32) -> Box<dyn ExprPT + 'a
 }
 
 fn parse_func<'a>(lexer: &mut Lexer<'a>) -> FuncPT<'a> {
-    let return_type = parse_type_unwrap(lexer);
+    let start = lexer.current.start;
+    lexer.consume();
     let identifier = parse_identifier_unwrap(lexer);
     if lexer.current.kind != TokenKind::LParen {
         panic!("Expected '(' at {}", lexer.current.start);
@@ -177,22 +184,30 @@ fn parse_func<'a>(lexer: &mut Lexer<'a>) -> FuncPT<'a> {
     lexer.consume();
 
     let mut params: Vec<ParamPT> = Vec::new();
-    while lexer.current.kind != TokenKind::RParen {
-        let param_type = parse_type_unwrap(lexer);
+    while !lexer.consume_if(TokenKind::RParen) {
         let identifier = parse_identifier_unwrap(lexer);
+        if lexer.current.kind != TokenKind::Colon {
+            panic!("Expected ':' at {}", lexer.current.start);
+        }
+        lexer.consume();
+        let param_type = parse_type_unwrap(lexer);
         if lexer.current.kind != TokenKind::RParen {
             panic!("Expected ',' or ')' at {}", lexer.current.start)
         }
         params.push(ParamPT { node: NodePT::new(param_type.node.start, identifier.node.end), ty: param_type, identifier });
     }
 
-    let proto_end = lexer.current.end;
+    if lexer.current.kind != TokenKind::Arrow {
+        panic!("Expected '->' at {}", lexer.current.start);
+    }
     lexer.consume();
+
+    let return_type = parse_type_unwrap(lexer);
     let body = parse_expr(lexer, 1);
     FuncPT {
-        node: NodePT::new(return_type.node.start, body.node().end),
+        node: NodePT::new(start, body.node().end),
         proto: ProtoPT {
-            node: NodePT::new(return_type.node.start, proto_end),
+            node: NodePT::new(start, return_type.node.end),
             identifier,
             return_type,
             params,

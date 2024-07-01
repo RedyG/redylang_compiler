@@ -27,7 +27,7 @@ impl TextPos {
 pub enum TokenKind {
     LParen,
     RParen,
-    LCuly,
+    LCurly,
     RCurly,
 
     And,
@@ -42,6 +42,8 @@ pub enum TokenKind {
     SemiColon,
 
     Return,
+    Do,
+    Var,
 
     Identifier,
     Int,
@@ -89,8 +91,14 @@ fn match_chars(c: u8, start: TextPos) -> Option<Token<'static>> {
     match c {
         b'(' => Some(Token::from_str("(", TokenKind::LParen, start)),
         b')' => Some(Token::from_str(")", TokenKind::RParen, start)),
-        b'{' => Some(Token::from_str("{", TokenKind::LCuly, start)),
+        b'{' => Some(Token::from_str("{", TokenKind::LCurly, start)),
         b'}' => Some(Token::from_str("}", TokenKind::RCurly, start)),
+
+        b'+' => Some(Token::from_str("+", TokenKind::Add, start)),
+        b'-' => Some(Token::from_str("-", TokenKind::Sub, start)),
+        b'*' => Some(Token::from_str("*", TokenKind::Mul, start)),
+        b'/' => Some(Token::from_str("/", TokenKind::Div, start)),
+
         b',' => Some(Token::from_str(",", TokenKind::Comma, start)),
         b';' => Some(Token::from_str(";", TokenKind::SemiColon, start)),
         _ => None,
@@ -177,6 +185,8 @@ impl<'a> Lexer<'a> {
         return_match!(self.current, match_chars(trimmed_input.as_bytes()[0], self.current.end));
 
         return_match!(self.current, match_keyword(trimmed_input, "return", TokenKind::Return, self.current.end));
+        return_match!(self.current, match_keyword(trimmed_input, "do", TokenKind::Do, self.current.end));
+        return_match!(self.current, match_keyword(trimmed_input, "var", TokenKind::Var, self.current.end));
 
 
         return_match!(self.current, match_identifier(trimmed_input, self.current.end));

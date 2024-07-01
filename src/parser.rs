@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::{lexer::{Lexer, TokenKind}, parse_tree::*};
+use crate::{lexer::{Lexer, Token, TokenKind}, parse_tree::*};
 
 
 pub fn parse(input: &str) -> FuncPT {
@@ -40,41 +40,112 @@ fn parse_identifier_unwrap<'a>(lexer: &mut Lexer<'a>) -> IdentifierPT<'a> {
     }
 }
 
-fn parse_primary(lexer: &mut Lexer) -> Box<dyn ExprPT> {
-    if lexer.current.kind == TokenKind::Int {
-        let number = IntLiteralPT {
-            value: lexer.current.content.replace("_", "").parse().unwrap(),
-            node: NodePT::from_token(&lexer.current)
-        };
-        lexer.consume();
-        Box::new(number)
-    } else {
-        panic!("Expected number at {}", lexer.current.start);
+fn parse_primary<'a>(lexer: &mut Lexer<'a>) -> Box<dyn ExprPT + 'a> {
+    match lexer.current.kind {
+        TokenKind::Int => {
+            let number = IntLiteralPT {
+                value: lexer.current.content.replace("_", "").parse().unwrap(),
+                node: NodePT::from_token(&lexer.current)
+            };
+            lexer.consume();
+            Box::new(number)
+        },
+        TokenKind::Identifier => {
+            let identifier = IdentifierPT { name: lexer.current.content, node: NodePT::from_token(&lexer.current) };
+            lexer.consume();
+            Box::new(identifier)
+        },
+        TokenKind::LParen => {
+            let start = lexer.current.start;
+            lexer.consume();
+            let inner = parse_expr(lexer, 1);
+            if lexer.current.kind != TokenKind::RParen {
+                panic!("Expected ')' at {}", lexer.current.start);
+            }
+            let expr = ParenPT {
+                expr: inner,
+                node: NodePT::new(start, lexer.current.end),
+            };
+            lexer.consume();
+            Box::new(expr)
+        },
+        TokenKind::LCurly => {
+            let start = lexer.current.start;
+            lexer.consume();
+            let mut statements = Vec::<Box<dyn StatementPT>>::new();
+            let mut last_expr: Option<Box<dyn ExprPT>> = None;
+            while lexer.current.kind != TokenKind::RCurly {
+                match parse_item(lexer, 1) {
+                    ItemPT::Expr(expr) if lexer.current.kind == TokenKind::SemiColon => {
+                        let end = lexer.current.end;
+                        lexer.consume();
+                        statements.push(Box::new(ExprStatementPT { node: NodePT { start: expr.node().start, end }, expr }));
+                    },
+                    ItemPT::Expr(expr) => {
+                        last_expr = Some(expr);
+                        if lexer.current.kind == TokenKind::RCurly {
+                            break;
+                        }
+                        panic!("Expected '}}' at {}", lexer.current.start);
+                    },
+                    ItemPT::Statement(statement) => statements.push(statement),                    
+                }
+            }
+            let end = lexer.current.end;
+            lexer.consume();
+            Box::new(BlockPT {
+                statements,
+                last_expr,
+                node: NodePT::new(start, end),
+            })
+        },
+        _ => panic!("Unexpected token at {}", lexer.current.start),
     }
 }
 
-fn parse_postfix(lexer: &mut Lexer) -> Box<dyn ExprPT> {
+fn parse_postfix<'a>(lexer: &mut Lexer<'a>) -> Box<dyn ExprPT + 'a> {
     parse_primary(lexer)
 }
 
-fn parse_unary(lexer: &mut Lexer) -> Box<dyn ExprPT> {
+fn parse_unary<'a>(lexer: &mut Lexer<'a>) -> Box<dyn ExprPT + 'a> {
     parse_postfix(lexer)
 }
 
 
-fn parse_item(lexer: &mut Lexer, precedence: u32) -> ItemPT {
-    
-    let mut expr = parse_unary(lexer);
+fn parse_item<'a>(lexer: &mut Lexer<'a>, precedence: u32) -> ItemPT<'a> {
+    if lexer.current.kind == TokenKind::Var {
+        let start = lexer.current.start;
+        lexer.consume();
+        let ty = parse_type_unwrap(lexer);
+        let identifier = parse_identifier_unwrap(lexer);
+        if lexer.current.kind != TokenKind::Eq {
+            panic!("Expected '=' at {}", lexer.current.start);
+        }
+        lexer.consume();
+        let expr = parse_expr(lexer, 1);
+        if lexer.current.kind != TokenKind::SemiColon {
+            panic!("Expected ';' at {}", lexer.current.start);
+        }
+        let end = lexer.current.end;
+        lexer.consume();
+        return ItemPT::Statement(Box::new(VarPT {
+            ty,
+            identifier,
+            expr,
+            node: NodePT::new(start, end),
+        }))
+    }
+
+    let mut expr: Box<dyn ExprPT + 'a> = parse_unary(lexer);
     let start = expr.node().start;
     loop {
         let op = BinOp::from_token(&lexer.current);
-        lexer.consume();
         if let Some(op) = op {
+            lexer.consume();
             let op_precedence = op.precedence();
             if op_precedence < precedence {
                 break;
             }
-
             let rhs = parse_expr(lexer, op_precedence + op.left_associative() as u32);
             let end = rhs.node().end;
             expr = Box::new(BinOpPT {
@@ -90,7 +161,7 @@ fn parse_item(lexer: &mut Lexer, precedence: u32) -> ItemPT {
     ItemPT::Expr(expr)
 }
 
-fn parse_expr(lexer: &mut Lexer, precedence: u32) -> Box<dyn ExprPT> {
+fn parse_expr<'a>(lexer: &mut Lexer<'a>, precedence: u32) -> Box<dyn ExprPT + 'a> {
     match parse_item(lexer, precedence) {
         ItemPT::Expr(expr) => expr,
         ItemPT::Statement(statement) => panic!("Expected expression at {}", statement.node().start),

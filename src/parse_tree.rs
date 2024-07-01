@@ -1,15 +1,11 @@
 use crate::lexer::{TextPos, Token, TokenKind};
 
-//
-// struture of the tree
-//
-
 pub trait ExprPT: std::fmt::Debug {
     fn to_ast(&self);
     fn node(&self) -> &NodePT;
 }
 
-pub trait StatementPT {
+pub trait StatementPT: std::fmt::Debug {
     fn to_ast(&self);
     fn node(&self) -> &NodePT;
 }
@@ -54,15 +50,10 @@ pub struct ProtoPT<'a> {
 #[derive(Debug)]
 pub struct FuncPT<'a> {
     pub proto: ProtoPT<'a>,
-    pub body: Box<dyn ExprPT>,
+    pub body: Box<dyn ExprPT + 'a>,
     pub node: NodePT,
 }
 
-#[derive(Debug)]
-pub struct IdentifierPT<'a> {
-    pub name: &'a str,
-    pub node: NodePT,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub enum BinOp {
@@ -106,14 +97,18 @@ impl BinOp {
     }
 }
 
-pub enum ItemPT {
-    Expr(Box<dyn ExprPT>),
-    Statement(Box<dyn StatementPT>),
+pub enum ItemPT<'a> {
+    Expr(Box<dyn ExprPT + 'a>),
+    Statement(Box<dyn StatementPT + 'a>),
 }
 
-//
-// implementation of the tree
-//
+
+
+#[derive(Debug)]
+pub struct IdentifierPT<'a> {
+    pub name: &'a str,
+    pub node: NodePT,
+}
 
 #[derive(Debug)]
 pub struct IntLiteralPT {
@@ -132,14 +127,14 @@ impl ExprPT for IntLiteralPT {
 }
 
 #[derive(Debug)]
-pub struct BinOpPT {
-    pub lhs: Box<dyn ExprPT>,
+pub struct BinOpPT<'a> {
+    pub lhs: Box<dyn ExprPT + 'a>,
     pub op: BinOp,
-    pub rhs: Box<dyn ExprPT>,
+    pub rhs: Box<dyn ExprPT + 'a>,
     pub node: NodePT,
 }
 
-impl ExprPT for BinOpPT {
+impl ExprPT for BinOpPT<'_> {
     fn to_ast(&self) {
         println!("BinOp: {:?}", self.op);
         self.lhs.to_ast();
@@ -149,4 +144,95 @@ impl ExprPT for BinOpPT {
     fn node(&self) -> &NodePT {
         &self.node
     }
+}
+
+impl<'a> ExprPT for IdentifierPT<'a> {
+    fn to_ast(&self) {
+        println!("Variable: {}", self.name);
+    }
+    
+    fn node(&self) -> &NodePT {
+        &self.node
+    }
+}
+
+#[derive(Debug)]
+pub struct ParenPT<'a> {
+    pub expr: Box<dyn ExprPT + 'a>,
+    pub node: NodePT,
+}
+
+impl<'a> ExprPT for ParenPT<'a> {
+    fn to_ast(&self) {
+        println!("Parentheses:");
+        self.expr.to_ast();
+    }
+    
+    fn node(&self) -> &NodePT {
+        &self.node
+    }
+}
+
+#[derive(Debug)]
+pub struct BlockPT<'a> {
+    pub statements: Vec<Box<dyn StatementPT + 'a>>,
+    pub last_expr: Option<Box<dyn ExprPT + 'a>>,
+    pub node: NodePT,
+}
+
+impl<'a> ExprPT for BlockPT<'a> {
+    fn to_ast(&self) {
+        println!("Block:");
+        for statement in &self.statements {
+            statement.to_ast();
+        }
+    }
+    
+    fn node(&self) -> &NodePT {
+        &self.node
+    }
+} 
+
+#[derive(Debug)]
+pub struct ExprStatementPT<'a> {
+    pub expr: Box<dyn ExprPT + 'a>,
+    pub node: NodePT,
+}
+
+impl<'a> StatementPT for ExprStatementPT<'a> {
+    fn to_ast(&self) {
+        self.expr.to_ast();
+    }
+    
+    fn node(&self) -> &NodePT {
+        &self.node
+    }
+}
+
+#[derive(Debug)]
+pub struct VarPT<'a> {
+    pub ty: TypePT<'a>,
+    pub identifier: IdentifierPT<'a>,
+    pub expr: Box<dyn ExprPT + 'a>,
+    pub node: NodePT,
+}
+
+impl<'a> StatementPT for VarPT<'a> {
+    fn to_ast(&self) {
+        println!("Variable declaration:");
+       // self.ty.to_ast();
+        self.identifier.to_ast();
+        self.expr.to_ast();
+    }
+    
+    fn node(&self) -> &NodePT {
+        &self.node
+    }
+}
+
+pub struct IfPT<'a> {
+    pub condition: Box<dyn ExprPT + 'a>,
+    pub then_expr: Box<dyn ExprPT + 'a>,
+    pub else_expr: Option<Box<dyn ExprPT + 'a>>,
+    pub node: NodePT,
 }
